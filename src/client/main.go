@@ -6,6 +6,7 @@ import (
 	"github.com/gorilla/websocket"
 	"intercom"
 	"log"
+	"net/http"
 	"strconv"
 	"sync"
 )
@@ -51,33 +52,36 @@ func main() {
 }
 
 func newEchoClient(url, user string, done, limit chan struct{}) error {
-	c, _, err := websocket.DefaultDialer.Dial(url, nil)
+	hd := http.Header{}
+	hd.Add("CE-X-USER", user)
+
+	c, _, err := websocket.DefaultDialer.Dial(url, hd)
 	if err != nil {
 		log.Fatal("dial:", err, user)
 		return err
 	}
 
 	defer c.Close()
+	/*
+		rm := intercom.RegisterMessage{
+			Token: user,
+			Event: "what ever",
+		}
+		strRm, _ := json.Marshal(rm)
+		msg := intercom.WSMessage{
+			Kind: intercom.RegisterMessageType,
+			Body: string(strRm),
+		}
 
-	rm := intercom.RegisterMessage{
-		Token: user,
-		Event: "what ever",
-	}
-	strRm, _ := json.Marshal(rm)
-	msg := intercom.WSMessage{
-		Kind: intercom.RegisterMessageType,
-		Body: string(strRm),
-	}
+		strMsg, _ := json.Marshal(msg)
 
-	strMsg, _ := json.Marshal(msg)
+		err = c.WriteMessage(websocket.TextMessage, []byte(strMsg))
 
-	err = c.WriteMessage(websocket.TextMessage, []byte(strMsg))
-
-	if err != nil {
-		log.Println("write:", err)
-		c.Close()
-		return err
-	}
+		if err != nil {
+			log.Println("write:", err)
+			c.Close()
+			return err
+		} */
 
 	log.Println("connected", user)
 	<-limit

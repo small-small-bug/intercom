@@ -2,6 +2,7 @@ package main
 
 import (
 	"intercom"
+	"log"
 	"net/http"
 )
 
@@ -29,6 +30,8 @@ func main() {
 	}
 
 	// Run server
+	log.Println("The intercom server is read for listening")
+
 	if err := server.ListenAndServe(); err != nil {
 		panic(err)
 	}

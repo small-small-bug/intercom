@@ -3,12 +3,12 @@ package intercom
 import (
 	"encoding/json"
 	"errors"
+	"github.com/gorilla/websocket"
+	log "github.com/sirupsen/logrus"
 	"io"
 	"net/http"
 	"strings"
 	"time"
-
-	"github.com/gorilla/websocket"
 )
 
 // websocketHandler defines to handle websocket upgrade request.
@@ -33,6 +33,14 @@ type RegisterMessage struct {
 
 type lookupHandler struct {
 	cm *CommManager
+}
+
+type healthHandler struct {
+}
+
+func (hh *healthHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusOK)
+	return
 }
 
 // if the channel is established in this server.
@@ -64,18 +72,40 @@ func (lh *lookupHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 // First try to upgrade connection to websocket. If success, connection will
 // be kept until client send close message or server drop them.
 func (wh *websocketHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+
+	token := r.Header.Get("Ce-X-User")
+	var user string
+	var ok bool
+
+	if token == "" {
+		w.WriteHeader(http.StatusUnauthorized)
+		return
+	}
+
+	if wh.calcUserIDFunc != nil {
+		user, ok = wh.calcUserIDFunc(token)
+		if !ok {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+	} else {
+		user = token
+	}
+
+	//upgrade to websocket
 	wsConn, err := wh.upgrader.Upgrade(w, r, nil)
 	if err != nil {
+		log.Error("failed to upgrade to websocket")
 		return
 	}
 	defer wsConn.Close()
 
 	// handle Websocket request
 	conn := NewConn(wsConn, wh)
-
-	conn.BeforeCloseFunc = func() {
-		// unbind
-		wh.cm.Unbind(conn)
+	err = wh.cm.Bind(user, conn)
+	if err != nil {
+		log.Error(err.Error())
+		return
 	}
 
 	conn.Listen()
@@ -132,6 +162,7 @@ func (s *pushHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	log.Info("get a push request, user: %s, common: %s", msg.UserID, msg.CommID)
 	var obj *CommObject
 	var err error
 
@@ -186,9 +217,9 @@ func (s *pushHandler) push(userID, commID, message string) (*CommObject, error) 
 	}
 
 	var obj *CommObject
-	var ok error
-	if obj, ok = s.cm.newCommand(userID, commID); ok != nil {
-		return nil, errors.New("create new command failed")
+	var err error
+	if obj, err = s.cm.newCommand(userID, commID); err != nil {
+		return nil, err
 	}
 
 	request := CommRequest{
@@ -202,7 +233,7 @@ func (s *pushHandler) push(userID, commID, message string) (*CommObject, error) 
 	conn := obj.conn
 	raw, _ := json.Marshal(&request)
 
-	_, err := conn.Write(raw)
+	_, err = conn.Write(raw)
 
 	if err != nil {
 		return nil, err

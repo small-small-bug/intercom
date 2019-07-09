@@ -15,7 +15,7 @@ import (
 
 // HTTP Rest API for pushing
 func main() {
-	pushURL := "http://127.0.0.1:80/push"
+	pushURL := "http://internal-localalbElasticlogQuery-uw2-620013642.us-west-2.elb.amazonaws.com/push"
 	contentType := "application/json"
 
 	users := make([]string, 10)
@@ -32,14 +32,20 @@ func main() {
 			}
 			b, _ := json.Marshal(pm)
 
-			resp, _ := http.DefaultClient.Post(pushURL, contentType, bytes.NewReader(b))
+			resp, err := http.DefaultClient.Post(pushURL, contentType, bytes.NewReader(b))
+			if err == nil {
 
-			body, _ := ioutil.ReadAll(resp.Body)
-			fmt.Println(string(body))
-
-			resp.Body.Close()
-
-			time.Sleep(time.Second)
+				body, ok := ioutil.ReadAll(resp.Body)
+				if ok == nil {
+					fmt.Println(string(body))
+					resp.Body.Close()
+					time.Sleep(time.Second)
+				} else {
+					fmt.Println(ok.Error())
+				}
+			} else {
+				fmt.Println(err.Error())
+			}
 		}
 	}
 }
