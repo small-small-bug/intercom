@@ -3,7 +3,6 @@ package intercom
 import (
 	"encoding/json"
 	"errors"
-	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
 	"io"
 	"log"
@@ -28,6 +27,7 @@ type Conn struct {
 	AfterReadFunc   func(messageType int, r io.Reader)
 	BeforeCloseFunc func()
 
+	// not useful
 	once   sync.Once
 	id     string
 	stopCh chan struct{}
@@ -36,11 +36,17 @@ type Conn struct {
 	userId *string
 
 	// if the socket registered or not
+	// not used any more
 	registered bool
 
 	// the websocket handler
 	// must not be empty
 	wh *websocketHandler
+
+	// command storage
+	commMap map[string]*CommObject
+	// lock for the command map
+	mu sync.RWMutex
 }
 
 // Write write p to the websocket connection. The error returned will always
@@ -58,17 +64,13 @@ func (c *Conn) Write(p []byte) (n int, err error) {
 	}
 }
 
-// GetID returns the Id generated using UUID algorithm.
-func (c *Conn) GetID() string {
-	c.once.Do(func() {
-		u := uuid.New()
-		c.id = u.String()
-	})
-
-	return c.id
-}
-
+// after a successful receive
+// TODO: add error handling. if any error happen, close the connection, so the client can retry.
 func (c *Conn) OnMessage(messageType int, r io.Reader) {
+
+	// messageType: either TextMessage or BinaryMessage, other message like PingMessage, PongMessage will be processed
+	// by websocket it self.
+	// actually, only TextMessage is used.
 	var wm WSMessage
 	decoder := json.NewDecoder(r)
 	if err := decoder.Decode(&wm); err != nil {
@@ -87,6 +89,7 @@ func (c *Conn) OnMessage(messageType int, r io.Reader) {
 
 }
 
+// do not need any more. HTTP header can be used for registration.
 func (c *Conn) HandleRegister(body string) error {
 
 	rm := RegisterMessage{}
@@ -112,6 +115,7 @@ func (c *Conn) HandleRegister(body string) error {
 
 }
 
+// Got a Response back from the client.
 func (c *Conn) HandleCommand(body string) error {
 
 	cr := CommResponse{}
@@ -122,20 +126,22 @@ func (c *Conn) HandleCommand(body string) error {
 		return err
 	}
 
-	wh := c.wh
 	commandID := cr.Id
 
 	userID := c.userId
 	if userID == nil {
-		return errors.New("this connection is not registered yet")
+		return errors.New("in HandleCommand: this connection is not registered yet")
 	}
 
-	obj, _ := wh.cm.lookupCommand(*userID, commandID)
+	c.mu.RLock()
+	obj, ok := c.commMap[commandID]
+	c.mu.RUnlock()
 
-	if obj == nil {
-		return errors.New("cannot find this command")
+	if !ok {
+		return errors.New("in HandleCommand: cannot find this command, maybe command timeout")
 	}
 
+	// notify the pusher to get the response
 	obj.response = &cr
 	close(obj.waitCH)
 
@@ -180,8 +186,9 @@ func (c *Conn) Close() error {
 // NewConn wraps conn.
 func NewConn(conn *websocket.Conn, wh *websocketHandler) *Conn {
 	return &Conn{
-		wh:     wh,
-		Conn:   conn,
-		stopCh: make(chan struct{}),
+		wh:      wh,
+		Conn:    conn,
+		stopCh:  make(chan struct{}),
+		commMap: make(map[string]*CommObject),
 	}
 }

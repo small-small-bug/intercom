@@ -14,6 +14,7 @@ const (
 	serverDefaultWSPath     = "/ws"
 	serverDefaultPushPath   = "/push"
 	serverDefaultHealthPath = "/health"
+	serverDefaultLookupPath = "/lookup"
 )
 
 var defaultUpgrader = &websocket.Upgrader{
@@ -37,6 +38,8 @@ type Server struct {
 
 	HealthPath string
 
+	LookupPath string
+
 	// Upgrader is for upgrade connection to websocket connection using
 	// "github.com/gorilla/websocket".
 	//
@@ -57,13 +60,14 @@ type Server struct {
 	wh *websocketHandler
 	ph *pushHandler
 	hh *healthHandler
+	lh *lookupHandler
 }
 
 // ListenAndServe listens on the TCP network address and handle websocket
 // request.
 func (s *Server) ListenAndServe() error {
-	cm := &CommManager{
-		userConnCommMap: make(map[string]*CommConn),
+	cm := &ConnManager{
+		userConnMap: make(map[string]*Conn),
 	}
 
 	// websocket request handler
@@ -79,6 +83,12 @@ func (s *Server) ListenAndServe() error {
 	}
 	s.wh = &wh
 	http.Handle(s.WSPath, s.wh)
+
+	lh := lookupHandler{
+		cm: cm,
+	}
+	s.lh = &lh
+	http.Handle(s.LookupPath, s.lh)
 
 	// push request handler
 	ph := pushHandler{
@@ -130,6 +140,7 @@ func NewServer(addr string) *Server {
 		WSPath:     serverDefaultWSPath,
 		PushPath:   serverDefaultPushPath,
 		HealthPath: serverDefaultHealthPath,
+		LookupPath: serverDefaultLookupPath,
 	}
 }
 

@@ -15,10 +15,11 @@ import (
 
 // HTTP Rest API for pushing
 func main() {
-	pushURL := "http://internal-localalbElasticlogQuery-uw2-620013642.us-west-2.elb.amazonaws.com/push"
+	//pushURL := "http://internal-localalbElasticlogQuery-uw2-620013642.us-west-2.elb.amazonaws.com/push"
+	pushURL := "http://127.0.0.1/push"
 	contentType := "application/json"
 
-	users := make([]string, 10)
+	users := make([]string, 1)
 	for i := range users {
 		users[i] = strconv.Itoa(i)
 	}
@@ -39,7 +40,7 @@ func main() {
 				if ok == nil {
 					fmt.Println(string(body))
 					resp.Body.Close()
-					time.Sleep(time.Second)
+					//time.Sleep(time.Second)
 				} else {
 					fmt.Println(ok.Error())
 				}
@@ -47,5 +48,6 @@ func main() {
 				fmt.Println(err.Error())
 			}
 		}
+		time.Sleep(time.Second * 10)
 	}
 }

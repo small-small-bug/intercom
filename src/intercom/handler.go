@@ -17,7 +17,7 @@ type websocketHandler struct {
 	upgrader *websocket.Upgrader
 
 	// cm stores relations about websocket connection and userID.
-	cm *CommManager
+	cm *ConnManager
 
 	// calcUserIDFunc defines to calculate userID by token. The userID will
 	// be equal to token if this function is nil.
@@ -32,10 +32,35 @@ type RegisterMessage struct {
 }
 
 type lookupHandler struct {
-	cm *CommManager
+	cm *ConnManager
 }
 
 type healthHandler struct {
+}
+
+type shutdownHandler struct {
+	cm *ConnManager
+}
+
+func (sh *shutdownHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodDelete {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+
+	vars := r.URL.Query()
+	userID := vars.Get("userid")
+
+	if userID == "" {
+		w.WriteHeader(http.StatusBadRequest)
+		w.Write([]byte(ErrRequestIllegal.Error()))
+		return
+	}
+	conn, _ := sh.cm.getConnByUser(userID)
+
+	if conn != nil {
+		conn.Conn.Close()
+	}
 }
 
 func (hh *healthHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -63,8 +88,10 @@ func (lh *lookupHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	found, _ := lh.cm.hasUser(userID)
 
-	if found {
+	if !found {
 		w.WriteHeader(http.StatusNotFound)
+	} else {
+		w.WriteHeader(http.StatusOK)
 	}
 
 }
@@ -127,7 +154,7 @@ type pushHandler struct {
 	// authFunc defines to authorize request. The request will proceed only
 	// when it returns true.
 	authFunc func(r *http.Request) bool
-	cm       *CommManager
+	cm       *ConnManager
 }
 
 // Authorize if needed. Then decode the request and push message to each

@@ -9,6 +9,11 @@ import (
 	"net/http"
 	"strconv"
 	"sync"
+	"time"
+)
+
+const (
+	pingPeriod = time.Second * 20
 )
 
 func main() {
@@ -55,6 +60,8 @@ func newEchoClient(url, user string, done, limit chan struct{}) error {
 	hd := http.Header{}
 	hd.Add("CE-X-USER", user)
 
+	ticker := time.NewTicker(pingPeriod)
+
 	c, _, err := websocket.DefaultDialer.Dial(url, hd)
 	if err != nil {
 		log.Fatal("dial:", err, user)
@@ -62,31 +69,23 @@ func newEchoClient(url, user string, done, limit chan struct{}) error {
 	}
 
 	defer c.Close()
-	/*
-		rm := intercom.RegisterMessage{
-			Token: user,
-			Event: "what ever",
-		}
-		strRm, _ := json.Marshal(rm)
-		msg := intercom.WSMessage{
-			Kind: intercom.RegisterMessageType,
-			Body: string(strRm),
-		}
-
-		strMsg, _ := json.Marshal(msg)
-
-		err = c.WriteMessage(websocket.TextMessage, []byte(strMsg))
-
-		if err != nil {
-			log.Println("write:", err)
-			c.Close()
-			return err
-		} */
 
 	log.Println("connected", user)
 	<-limit
 
 	// wait until the server close the connection
+	go func() {
+		for {
+			select {
+			case <-ticker.C:
+				if err := c.WriteMessage(websocket.PingMessage, []byte{}); err != nil {
+					return
+				}
+				//log.Println("start to write ping message")
+			}
+		}
+	}()
+
 readloop:
 	for {
 		select {
